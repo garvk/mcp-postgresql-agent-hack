@@ -29,8 +29,11 @@ class MCPMultiClient:
                 
         return status_report
 
+
+    
     async def process_query(self, query: str) -> Dict[str, Any]:
         """Process query using Claude and available tools across all servers"""
+        logger.info("Starting process_query")
         final_text = []
         tool_calls = []
         
@@ -45,6 +48,7 @@ class MCPMultiClient:
 
         try:
             # Initial Claude API call
+            logger.info(f"Available tools: {[tool['name'] for tool in available_tools]}")
             response = self.anthropic.messages.create(
                 model="claude-3-5-sonnet-20241022",
                 max_tokens=1000,
@@ -52,7 +56,9 @@ class MCPMultiClient:
                 tools=available_tools
             )
 
+            logger.info(f"Got response from Claude with {len(response.content)} content items")
             for content in response.content:
+                logger.info(f"Processing content type: {content.type}")
                 if content.type == 'text':
                     final_text.append(content.text)
                     self.conversation_history.append({

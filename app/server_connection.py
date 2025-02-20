@@ -43,15 +43,11 @@ class ServerConnection:
                 claude_name = f"{self.name}_{tool.name}".replace('.', '_')
                 self.tool_name_map[claude_name] = tool.name
                 
-                self.tools.append({
-                    "type": "custom",  # Changed from "function" to "custom"
+                # Use exact format from working implementation
+                self.tools.append({ 
                     "name": claude_name,
                     "description": f"[{self.name}] {tool.description}",
-                    "parameters": {
-                        "type": "object",
-                        "properties": tool.inputSchema.get("properties", {}),
-                        "required": tool.inputSchema.get("required", [])
-                    }
+                    "input_schema": tool.inputSchema  # Changed from parameters to input_schema
                 })
             
             self.config.status = "connected"

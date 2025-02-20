@@ -76,13 +76,14 @@ async def main(message: cl.Message):
         return
 
     try:
-        with cl.Step("Processing query..."):
+        async with cl.Step("Processing query...") as step:
             result = await client.process_query(message.content)
             
             # Handle tool calls first
             if result.get("tool_calls"):
                 for tool_call in result["tool_calls"]:
                     server_name = tool_call["server"]
+                    # Create and send a new message instead of using step.send
                     await cl.Message(
                         content=f"🔧 [{server_name}] Executing: {tool_call['name']}"
                     ).send()
@@ -133,6 +134,150 @@ async def main(message: cl.Message):
         error_msg = str(e)
         logger.error(f"Error processing query: {error_msg}", exc_info=True)
         await cl.Message(content=f"❌ Error: {error_msg}").send()
+
+# @cl.on_message
+# async def main(message: cl.Message):
+#     """Process user messages and handle tool execution"""
+#     logger.info(f"Processing message: {message.content}")
+    
+#     client = clients.get(cl.user_session.get("id"))
+#     if not client:
+#         await cl.Message(content="⚠️ Session not initialized. Please restart.").send()
+#         return
+
+#     try:
+#         # Create a step and make sure to use it as a context manager
+#         async with cl.Step("Processing query...") as step:
+#             result = await client.process_query(message.content)
+            
+#             # Handle tool calls first
+#             if result.get("tool_calls"):
+#                 for tool_call in result["tool_calls"]:
+#                     server_name = tool_call["server"]
+#                     await step.send(
+#                         cl.Message(content=f"🔧 [{server_name}] Executing: {tool_call['name']}")
+#                     )
+                    
+#                     # Show args if present
+#                     if tool_call.get("args"):
+#                         await step.send(
+#                             cl.Message(
+#                                 content="📝 Arguments:",
+#                                 elements=[
+#                                     cl.Text(
+#                                         name="args",
+#                                         content=json.dumps(tool_call["args"], indent=2),
+#                                         language="json"
+#                                     )
+#                                 ]
+#                             )
+#                         )
+                    
+#                     # Show result
+#                     try:
+#                         result_content = tool_call["result"]
+#                         if isinstance(result_content, str):
+#                             try:
+#                                 result_json = json.loads(result_content)
+#                                 await step.send(
+#                                     cl.Message(
+#                                         content=f"📊 Result from {server_name}:",
+#                                         elements=[
+#                                             cl.Text(
+#                                                 name="result",
+#                                                 content=json.dumps(result_json, indent=2),
+#                                                 language="json"
+#                                             )
+#                                         ]
+#                                     )
+#                                 )
+#                             except json.JSONDecodeError:
+#                                 await step.send(
+#                                     cl.Message(content=f"Result from {server_name}: {result_content}")
+#                                 )
+#                     except Exception as e:
+#                         await step.send(
+#                             cl.Message(content=f"❌ Error processing result from {server_name}: {str(e)}")
+#                         )
+
+#             # Show final response
+#             if result.get("response"):
+#                 await cl.Message(content=result["response"]).send()
+
+#     except Exception as e:
+#         error_msg = str(e)
+#         logger.error(f"Error processing query: {error_msg}", exc_info=True)
+#         await cl.Message(content=f"❌ Error: {error_msg}").send()
+
+
+# @cl.on_message
+# async def main(message: cl.Message):
+#     """Process user messages and handle tool execution"""
+#     logger.info(f"Processing message: {message.content}")
+    
+#     client = clients.get(cl.user_session.get("id"))
+#     if not client:
+#         await cl.Message(content="⚠️ Session not initialized. Please restart.").send()
+#         return
+
+#     try:
+#         with cl.Step("Processing query..."):
+#             result = await client.process_query(message.content)
+            
+#             # Handle tool calls first
+#             if result.get("tool_calls"):
+#                 for tool_call in result["tool_calls"]:
+#                     server_name = tool_call["server"]
+#                     await cl.Message(
+#                         content=f"🔧 [{server_name}] Executing: {tool_call['name']}"
+#                     ).send()
+                    
+#                     # Show args if present
+#                     if tool_call.get("args"):
+#                         await cl.Message(
+#                             content="📝 Arguments:",
+#                             elements=[
+#                                 cl.Text(
+#                                     name="args",
+#                                     content=json.dumps(tool_call["args"], indent=2),
+#                                     language="json"
+#                                 )
+#                             ]
+#                         ).send()
+                    
+#                     # Show result
+#                     try:
+#                         result_content = tool_call["result"]
+#                         if isinstance(result_content, str):
+#                             try:
+#                                 result_json = json.loads(result_content)
+#                                 await cl.Message(
+#                                     content=f"📊 Result from {server_name}:",
+#                                     elements=[
+#                                         cl.Text(
+#                                             name="result",
+#                                             content=json.dumps(result_json, indent=2),
+#                                             language="json"
+#                                         )
+#                                     ]
+#                                 ).send()
+#                             except json.JSONDecodeError:
+#                                 await cl.Message(
+#                                     content=f"Result from {server_name}: {result_content}"
+#                                 ).send()
+#                     except Exception as e:
+#                         await cl.Message(
+#                             content=f"❌ Error processing result from {server_name}: {str(e)}"
+#                         ).send()
+
+#             # Show final response
+#             if result.get("response"):
+#                 await cl.Message(content=result["response"]).send()
+
+#     except Exception as e:
+#         error_msg = str(e)
+#         logger.error(f"Error processing query: {error_msg}", exc_info=True)
+#         await cl.Message(content=f"❌ Error: {error_msg}").send()
 
 
 # import sys, os
