@@ -1,0 +1,18 @@
+{
+    "features": {
+        "persistent_chat_history": false,
+        "thread_persistence": false,
+        "user_persistence": false,
+        "message_persistence": false,
+        "step_persistence": false
+    },
+    "ui": {
+        "default_expand_messages": true,
+        "show_tool_calls": true
+    },
+    "database": {
+        "enabled": true,
+        "provider": "postgresql",
+        "url": "${CHAINLIT_DATABASE_URL}"
+    }
+}

@@ -35,7 +35,7 @@ source .venv/bin/activate
 ```bash
 # For python equivalent of:
 # Install required packages
-uv add mcp anthropic python-dotenv
+uv add mcp anthropic python-dotenv chainlit asyncpg
 
 # or install from requirements.txt
 
@@ -55,8 +55,9 @@ ANTHROPIC_API_KEY=your_api_key_here
 
 ## Usage
 
-The client can be run with the following command structure:
+The client can be run in two modes:
 
+1. Command Line Interface:
 ```bash
 uv run client.py <path-to-mcp-server> <database-url>
 ```
@@ -67,6 +68,15 @@ For example:
 uv run client.py ./node_modules/@modelcontextprotocol/server-postgres/dist/index.js postgresql://localhost/your_database
 ```
 
+2. UI with Chainlit
+For first time setup:
+1. Create a db in postgres with name `chat_history`
+2. initialise tables in db by running `init_db.py`. ```bash python app/init_db.py```
+
+To start chainlit run:
+```bash
+chainlit run app/chainlit_app.py
+```
 
 Where:
 - `<path-to-mcp-server>` is the path to the MCP server JavaScript file
