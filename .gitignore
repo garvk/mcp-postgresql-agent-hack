@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .env
+python-sdk/
 
 node_modules/
 
