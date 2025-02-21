@@ -17,3 +17,4 @@ package-lock.json
 
 .chainlit/*
 .files/*
+mcp_config.json

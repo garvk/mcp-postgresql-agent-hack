@@ -1,140 +1,64 @@
 
-## 1. Project Structure
-```
-mcp-client/
-├── app/
-│   ├── __init__.py
-│   ├── client.py        (existing MCP client)
-│   └── chainlit_app.py  (new Chainlit integration)
-```
+1. **Configuration Structure**
 
-
-## 2. Implementation Details
-
-
-### Phase 1: MCPClient Modifications
-
-
-Modify the existing MCPClient class to:
-
-1. Support per-session initialization
-
-2. Better handle async cleanup
-
-3. Provide clearer tool execution feedback
-
-
-4. Maintain existing query processing functionality
 
 ```python
-class MCPClient:
-    def __init__(self):
+# app/config.py
+from pydantic import BaseModel
+from typing import Dict, List
+
+class ServerConfig(BaseModel):
+    command: str
+    args: List[str]
+
+class MCPConfig(BaseModel):
+    mcpServers: Dict[str, ServerConfig]
+```
+
+
+2. **MCPClient Modifications**
+- Add support for multiple server connections
+- Namespace tools by server name
+- Handle partial server failures
+- Track server health status
+
+
+
+3. **Server Management**
+```python
+class ServerConnection:
+    def __init__(self, name: str, config: ServerConfig):
+        self.name = name
+        self.config = config
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
+        self.tools: List[Dict] = []
+        self.status: str = "initializing"
+
+class MCPMultiClient:
+    def __init__(self):
+        self.servers: Dict[str, ServerConnection] = {}
         self.anthropic = Anthropic()
-
-    async def connect_to_server(self, server_script_path: str, database_url: str):
-        """Connect to MCP server and return available tools"""
-        
-    async def process_query(self, query: str) -> str:
-        """Process query with tool execution details"""
-        
-    async def cleanup(self):
-        """Clean up resources properly"""
 ```
 
 
-### Phase 2: Chainlit Integration
+
+4. **Chainlit Integration Flow**:
 
 
-1. Session Management:
-```python
-# Store clients for each session
-clients = {}
-
-@cl.on_chat_start
-async def start():
-    # Initialize per-session client
-    
-@cl.on_chat_end
-async def end():
-    # Cleanup session resources
-```
-
-
-2. Message Processing:
-```python
-@cl.on_message
-async def main(message: cl.Message):
-    # Process messages with progress indicators
-```
-
-
-3. Tool Execution Visualization:
-
-- Show when tools are being called
-
-- Display SQL queries being executed
-
-- Show results in formatted way
-
-- Handle and display errors appropriately
-
-
-4. Progress Indicators:
-```python
-with cl.Step("Processing query...") as step:
-    # Show progress during:
-    # - Tool selection
-    # - Query execution
-    # - Result processing
-```
-
-
-### Phase 3: Command Line Integration
-
-
-Support running the app with same arguments as current client:
-```bash
-chainlit run app/chainlit_app.py -- ./node_modules/@modelcontextprotocol/server-postgres/dist/index.js postgresql://localhost/your_database
-```
-
-
-### Phase 4: Error Handling
-
-
-1. Connection Errors:
-
-
-   - Database connection issues
-
-   - MCP server startup problems
-
-   - Invalid arguments
-
-2. Runtime Errors:
-    - Invalid SQL queries
-    - Session timeout/disconnection
-    - Tool execution failures
-3. Cleanup Errors:
-    - Proper resource cleanup on session end
-    - Handling unexpected disconnections
+a. Startup:
+- Load config file
+- Initialize all servers
+- Report status of each server
+- Continue even if some servers fail
 
 
 
-## 3. Testing Strategy
-1. Unit Tests:
-    - MCPClient modifications
-    - Tool execution logic
-    - Error handling
+b. Message Processing:
 
-2. Integration Tests:
-    - Chainlit session management
-    - Database connectivity
-    - Tool execution flow   
+- Track which server handles each tool
+- Show server name in tool execution messages
+- Handle partial system availability
 
-3. End-to-End Tests:
-    - Complete query processing flow
-    - Session cleanup
-    - Error recovery
 
+5. Code cleanup
