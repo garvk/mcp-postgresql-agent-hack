@@ -145,6 +145,4 @@ async def end():
             await orchestrator.cleanup()
             logger.info(f"Cleaned up resources for session {session_id}")
         except Exception as e:
-            logger.error(f"Error during cleanup: {str(e)}", exc_info=True)
-
-
+            logger.error(f"Error during cleanup: {str(e)}", exc_info=True) 

@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-03-01T22:05:07.460960",
+  "context": "Tool Execution Error: postgres_query",
+  "exception_type": "McpError",
+  "exception_message": "Unknown tool: postgres_query",
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/garvkhurana/in5/mcp-postgres-agent/app/multi_client.py\", line 119, in process_query\n    result = await server.session.call_tool(actual_tool_name, tool_args)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/garvkhurana/in5/mcp-postgres-agent/.venv/lib/python3.12/site-packages/mcp/client/session.py\", line 163, in call_tool\n    return await self.send_request(\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/garvkhurana/in5/mcp-postgres-agent/.venv/lib/python3.12/site-packages/mcp/shared/session.py\", line 175, in send_request\n    raise McpError(response_or_error.error)\nmcp.shared.exceptions.McpError: Unknown tool: postgres_query\n",
+  "additional_info": {
+    "tool_args": {
+      "sql": "SELECT COUNT(*) as total_customers FROM customers;"
+    },
+    "server": "postgres"
+  }
+}
