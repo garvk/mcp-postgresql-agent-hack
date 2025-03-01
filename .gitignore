@@ -18,3 +18,8 @@ package-lock.json
 .chainlit/*
 .files/*
 mcp_config.json
+
+cline/
+chatmcp/
+5ire/
+python-sdk/
