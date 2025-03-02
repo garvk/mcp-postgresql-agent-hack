@@ -64,26 +64,78 @@ async def main(message: cl.Message):
         return
     
     try:
-        # Check for multi-step flag
+        # multi-step is not fully supported yet; it aims to support advanced planning before query execution
+        # Check for multi-step flag; multi-step is not fully supported yet
         multi_step = "multi-step" in message.content.lower() or "multistep" in message.content.lower()
         
         async with cl.Step("Processing query...") as step:
             # Process the query with our orchestrator
             result = await orchestrator.process_query(message.content, multi_step=multi_step)
             logger.info(f"Result from orchestrator: {result}")
+            
             # Handle tool calls
             if result.get("tool_calls"):
-                for tool_call in result["tool_calls"]:
+                sequential_thinking_progress = {}
+                active_sequential_server = None  # Track which server is handling sequential thinking
+                skip_next = False
+                
+                for i, tool_call in enumerate(result["tool_calls"]):
+                    # Skip if marked by previous iteration
+                    if skip_next:
+                        skip_next = False
+                        continue
+                        
                     server_name = tool_call.get("server", "unknown")
                     tool_name = tool_call.get("name", "unknown")
                     
-                    # Create and send a new message for the tool execution
-                    await cl.Message(
-                        content=f"🔧 [{server_name}] Executing: {tool_name}"
-                    ).send()
+                    # Special handling for sequential thinking
+                    if "sequentialthinking" in tool_name.lower():
+                        # If we have an active sequential thinking server and it's different, log a warning
+                        if active_sequential_server and active_sequential_server != server_name:
+                            logger.warning(f"Multiple sequential thinking servers detected: {active_sequential_server} and {server_name}")
+                        
+                        # Set the active sequential thinking server if not already set
+                        if not active_sequential_server:
+                            active_sequential_server = server_name
+                        
+                        # Track sequential thinking progress
+                        thought_num = tool_call.get("args", {}).get("thoughtNumber", 0)
+                        total_thoughts = tool_call.get("args", {}).get("totalThoughts", 0)
+                        thought_text = tool_call.get("args", {}).get("thought", "")
+                        
+                        # Store progress
+                        if server_name not in sequential_thinking_progress:
+                            sequential_thinking_progress[server_name] = []
+                        
+                        sequential_thinking_progress[server_name].append({
+                            "thought_num": thought_num,
+                            "total_thoughts": total_thoughts,
+                            "thought_text": thought_text
+                        })
+                        
+                        # Create and send a new message for the sequential thinking step
+                        await cl.Message(
+                            content=f"🧠 [{server_name}] Thought {thought_num}/{total_thoughts}: {thought_text}"
+                        ).send()
+                        
+                        # If there's a subsequent tool call that's not sequential thinking,
+                        # it's likely the action taken based on this thought
+                        if len(result["tool_calls"]) > i + 1 and "sequentialthinking" not in result["tool_calls"][i+1].get("name", "").lower():
+                            action_tool = result["tool_calls"][i+1]
+                            await cl.Message(
+                                content=f"🔧 Action based on thought {thought_num}: Using {action_tool.get('name', 'unknown')}"
+                            ).send()
+                            
+                            # Skip the next tool call since we've already displayed it
+                            skip_next = True
+                    else:
+                        # Regular tool execution
+                        await cl.Message(
+                            content=f"🔧 [{server_name}] Executing: {tool_name}"
+                        ).send()
                     
                     # Show args if present
-                    if tool_call.get("args"):
+                    if tool_call.get("args") and "sequentialthinking" not in tool_name.lower():
                         await cl.Message(
                             content="📝 Arguments:",
                             elements=[
@@ -120,6 +172,14 @@ async def main(message: cl.Message):
                             await cl.Message(
                                 content=f"✅ Result: {result_content}"
                             ).send()
+                
+                # Show sequential thinking summary if applicable
+                for server_name, thoughts in sequential_thinking_progress.items():
+                    if len(thoughts) > 1:
+                        summary = f"🧠 Sequential Thinking Progress ({server_name}):\n"
+                        for t in thoughts:
+                            summary += f"- Thought {t['thought_num']}/{t['total_thoughts']}: {t['thought_text'][:50]}...\n"
+                        await cl.Message(content=summary).send()
             
             # Send the detailed response
             await cl.Message(content=result.get("response", "")).send()

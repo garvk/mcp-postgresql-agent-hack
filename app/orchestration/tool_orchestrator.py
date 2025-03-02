@@ -2,6 +2,7 @@ import logging
 from typing import Dict, List, Any, Optional
 from anthropic import Anthropic
 from app.server_connection import ServerConnection
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,7 @@ class ToolOrchestrator:
         self.anthropic = anthropic_client
         self.tool_name_map = {}  # Maps Claude tool names to server tool names
         self.server_map = {}     # Maps Claude tool names to server instances
+        self.sequential_thinking_state = {}  # Track sequential thinking state
         
         # Build tool mappings
         self._build_tool_mappings()
@@ -60,16 +62,83 @@ class ToolOrchestrator:
         if not server:
             error_msg = f"No server found for tool: {tool_name}"
             logger.error(error_msg)
-            return {"error": error_msg}
+            return {"error": error_msg, "status": "error"}
         
         # Get original tool name if needed
         actual_tool_name = self.tool_name_map.get(tool_name, tool_name)
         
         try:
+            # Special handling for sequential thinking tool
+            if "sequentialthinking" in tool_name.lower():
+                # Check if we already have an active sequential thinking process from a different server
+                active_sequential_servers = set()
+                for active_tool in self.sequential_thinking_state:
+                    if "sequentialthinking" in active_tool.lower():
+                        active_server = self.server_map.get(active_tool)
+                        if active_server and active_server.name != server.name:
+                            active_sequential_servers.add(active_server.name)
+                
+                # If we have active sequential thinking from a different server, return an error
+                if active_sequential_servers and tool_args.get("thoughtNumber", 0) == 1:
+                    error_msg = f"Another sequential thinking process is already active on server(s): {', '.join(active_sequential_servers)}"
+                    logger.warning(error_msg)
+                    return {
+                        "server": server.name,
+                        "name": tool_name,
+                        "args": tool_args,
+                        "error": error_msg,
+                        "status": "error"
+                    }
+                
+                # Update thought number based on previous state
+                if "thoughtNumber" in tool_args and "totalThoughts" in tool_args:
+                    # If we have previous state, use it to update the current thought
+                    if tool_name in self.sequential_thinking_state:
+                        prev_state = self.sequential_thinking_state[tool_name]
+                        
+                        # Only increment if it's the same thought number (prevents double increments)
+                        if tool_args["thoughtNumber"] == prev_state["thoughtNumber"]:
+                            # Move to next thought
+                            tool_args["thoughtNumber"] = prev_state["thoughtNumber"] + 1
+                        elif tool_args["thoughtNumber"] <= prev_state["thoughtNumber"]:
+                            # Ensure we don't go backwards
+                            tool_args["thoughtNumber"] = prev_state["thoughtNumber"] + 1
+                    
+                    # Store current state for next call
+                    self.sequential_thinking_state[tool_name] = {
+                        "thoughtNumber": tool_args["thoughtNumber"],
+                        "totalThoughts": tool_args["totalThoughts"]
+                    }
+                    
+                    logger.info(f"Sequential thinking state updated: {self.sequential_thinking_state[tool_name]}")
+            
             # Execute tool call on appropriate server
             logger.info(f"Executing {actual_tool_name} on server {server.name}")
             result = await server.session.call_tool(actual_tool_name, tool_args)
             logger.info(f"Tool result: {result}")
+            
+            # For sequential thinking, parse the result to extract metadata
+            if "sequentialthinking" in tool_name.lower():
+                try:
+                    # Extract metadata from the result
+                    result_content = result.content
+                    if isinstance(result_content, list):
+                        for item in result_content:
+                            if hasattr(item, 'type') and item.type == "text":
+                                # Parse the JSON text content
+                                metadata = json.loads(item.text)
+                                # Add metadata to the result
+                                return {
+                                    "server": server.name,
+                                    "name": tool_name,
+                                    "args": tool_args,
+                                    "result": result.content,
+                                    "metadata": metadata,
+                                    "status": "success"
+                                }
+                except (json.JSONDecodeError, AttributeError, KeyError) as e:
+                    logger.warning(f"Failed to parse sequential thinking metadata: {str(e)}")
+            
             return {
                 "server": server.name,
                 "name": tool_name,

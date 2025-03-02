@@ -105,6 +105,10 @@ class Orchestrator:
         """
         logger.info(f"Processing query: {query}")
         
+        # Reset sequential thinking state for new query
+        if self.tool_orchestrator:
+            self.tool_orchestrator.sequential_thinking_state = {}
+        
         # Add user query to conversation history
         self.conversation_manager.add_user_message(query)
         
@@ -172,15 +176,15 @@ class Orchestrator:
         tool_calls: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Process a Claude response, handling any tool calls recursively
+        Process a response that may contain tool calls
         
         Args:
             response: Claude API response
             available_tools: Available tools
             system: System message
-            max_steps: Maximum number of steps to execute
-            current_step: Current step count
-            tool_calls: List to accumulate tool calls
+            max_steps: Maximum number of recursive steps
+            current_step: Current step number
+            tool_calls: List of tool calls made so far
             
         Returns:
             Processing results
@@ -188,18 +192,16 @@ class Orchestrator:
         if tool_calls is None:
             tool_calls = []
         
-        final_text = []
-        has_tool_call = False
-        
-        # Check if we've reached the maximum steps
         if current_step >= max_steps:
-            final_text.append("Reached maximum number of tool execution steps.")
             return {
-                "response": "\n".join(final_text),
+                "response": "Maximum recursion depth reached.",
                 "tool_calls": tool_calls,
-                "status": "success",
+                "status": "max_depth_reached",
                 "steps_executed": current_step
             }
+        
+        final_text = []
+        has_tool_call = False
         
         # Process each content item in the response
         for content in response.content:
@@ -215,37 +217,90 @@ class Orchestrator:
                 result = await self.tool_orchestrator.execute_tool(tool_name, tool_args)
                 tool_calls.append(result)
                 
-                # Add tool result to conversation
-                if result["status"] == "success":
-                    self.conversation_manager.add_tool_result(tool_name, result["result"])
+                # Special handling for sequential thinking
+                if "sequentialthinking" in tool_name.lower():
+                    # Add the thought to conversation
+                    thought_info = f"Thought {tool_args.get('thoughtNumber', '?')}/{tool_args.get('totalThoughts', '?')}"
+                    thought_text = tool_args.get('thought', '')
+                    self.conversation_manager.add_tool_result(tool_name, f"{thought_info}: {thought_text}")
                     
-                    # Get follow-up response
-                    follow_up = self.anthropic.messages.create(
+                    # Ask Claude what action to take based on this thought
+                    action_prompt = f"""
+                    Based on the sequential thinking step:
+                    
+                    {thought_info}: {thought_text}
+                    
+                    What specific action should be taken next? If a tool should be used, specify which one and with what parameters. If no tool is needed, provide the analysis or conclusion directly.
+                    """
+                    
+                    self.conversation_manager.add_user_message(action_prompt)
+                    
+                    # Get action recommendation from Claude
+                    action_response = self.anthropic.messages.create(
                         model="claude-3-5-sonnet-20241022",
                         max_tokens=1000,
                         system=system,
                         messages=self.conversation_manager.get_messages(),
                         tools=available_tools
                     )
-                    logger.info(f"Follow-up Claude response: {follow_up}")
                     
-                    # Recursively process the follow-up response
-                    nested_result = await self._process_response_with_tools(
-                        response=follow_up,
-                        available_tools=available_tools,
-                        system=system,
-                        max_steps=max_steps,
-                        current_step=current_step + 1,
-                        tool_calls=tool_calls
-                    )
+                    # Process the action recommendation
+                    action_result = None
+                    for action_content in action_response.content:
+                        if action_content.type == 'tool_use':
+                            # Execute the recommended tool
+                            action_tool_name = action_content.name
+                            action_tool_args = action_content.input
+                            
+                            # Add to conversation that we're using this tool
+                            self.conversation_manager.add_assistant_message(f"Based on this thought, I'll use {action_tool_name}.")
+                            
+                            # Execute the tool
+                            action_result = await self.tool_orchestrator.execute_tool(action_tool_name, action_tool_args)
+                            tool_calls.append(action_result)
+                            
+                            # Add the result to conversation
+                            if action_result["status"] == "success":
+                                self.conversation_manager.add_tool_result(action_tool_name, action_result.get("result", "No result available"))
+                            else:
+                                error_message = f"Error using {action_tool_name}: {action_result.get('error', 'Unknown error')}"
+                                self.conversation_manager.add_assistant_message(error_message)
+                        elif action_content.type == 'text':
+                            # If no tool was used, just add the analysis to conversation
+                            self.conversation_manager.add_assistant_message(action_content.text)
                     
-                    # Add the nested response text to our final text
-                    if "response" in nested_result:
-                        final_text.append(nested_result["response"])
+                    # Now continue with the next thought (handled by the follow-up response below)
                 else:
-                    error_message = f"Error using {tool_name}: {result.get('error', 'Unknown error')}"
-                    final_text.append(error_message)
-                    self.conversation_manager.add_assistant_message(error_message)
+                    # Regular tool handling
+                    if result["status"] == "success":
+                        self.conversation_manager.add_tool_result(tool_name, result["result"])
+                    else:
+                        error_message = f"Error using {tool_name}: {result.get('error', 'Unknown error')}"
+                        self.conversation_manager.add_assistant_message(error_message)
+                
+                # Get follow-up response
+                follow_up = self.anthropic.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1000,
+                    system=system,
+                    messages=self.conversation_manager.get_messages(),
+                    tools=available_tools
+                )
+                logger.info(f"Follow-up Claude response: {follow_up}")
+                
+                # Recursively process the follow-up response
+                nested_result = await self._process_response_with_tools(
+                    response=follow_up,
+                    available_tools=available_tools,
+                    system=system,
+                    max_steps=max_steps,
+                    current_step=current_step + 1,
+                    tool_calls=tool_calls
+                )
+                
+                # Add the nested response text to our final text
+                if "response" in nested_result:
+                    final_text.append(nested_result["response"])
             else:
                 # Handle any other unknown content types
                 final_text.append(f"Received unsupported content type: {content.type}")
@@ -261,6 +316,10 @@ class Orchestrator:
     
     async def cleanup(self):
         """Clean up all server connections"""
+        # Reset sequential thinking state
+        if self.tool_orchestrator:
+            self.tool_orchestrator.sequential_thinking_state = {}
+        
         cleanup_errors = []
         
         for server_name, server in self.servers.items():
@@ -328,4 +387,27 @@ class Orchestrator:
         
         except Exception as e:
             logger.error(f"Error generating summary: {str(e)}", exc_info=True)
-            return "Unable to generate summary due to an error." 
+            return "Unable to generate summary due to an error."
+
+    # Add this method to help with schema inspection
+    async def _get_table_schema(self, server: ServerConnection, table_name: str) -> List[Dict]:
+        """Get schema information for a specific table"""
+        try:
+            # Query to get column information
+            query_args = {
+                "query": f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}'"
+            }
+            
+            # Execute the query
+            result = await server.session.call_tool("query", query_args)
+            
+            if hasattr(result, 'content') and result.content:
+                # Parse the result
+                for item in result.content:
+                    if hasattr(item, 'type') and item.type == "text":
+                        return json.loads(item.text)
+            
+            return []
+        except Exception as e:
+            logger.error(f"Error getting schema for table {table_name}: {str(e)}")
+            return [] 
