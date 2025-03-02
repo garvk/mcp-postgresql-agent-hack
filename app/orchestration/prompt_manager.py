@@ -117,15 +117,20 @@ Here are the functions available in JSONSchema format:
             
         return prompt
     
-    def generate_shopify_prompt(self, tools: List[Dict[str, Any]]) -> str:
+    def generate_shopify_prompt(
+        self, 
+        tools: List[Dict[str, Any]], 
+        schema_info: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
-        Generate a Shopify-specific system prompt.
+        Generate a Shopify-specific system prompt with optional PostgreSQL schema information.
         
         Args:
             tools: List of tool definitions
+            schema_info: Optional dictionary containing database schema information
             
         Returns:
-            Shopify-tailored system prompt
+            Shopify-tailored system prompt with schema information if provided
         """
         shopify_prompt = """
 You are an expert Shopify data analyst assistant. Your goal is to help users gain insights from their Shopify store data.
@@ -137,6 +142,20 @@ When working with Shopify data:
 4. Present results in a clear, business-friendly format
 """
         
+        # Add schema information if provided
+        if schema_info:
+            schema_text = "\n\n## Database Schema\n\n"
+            for server_name, tables in schema_info.items():
+                schema_text += f"### Server: {server_name}\n\n"
+                for table_name, columns in tables.items():
+                    schema_text += f"**Table: {table_name}**\n"
+                    for column in columns:
+                        schema_text += f"- {column['column_name']} ({column['data_type']})\n"
+                    schema_text += "\n"
+        
+        # Append schema information to the Shopify prompt
+        shopify_prompt += schema_text
+        
         tool_config = """
 When using PostgreSQL tools:
 1. Start with simple exploratory queries to understand the data structure
@@ -145,8 +164,64 @@ When using PostgreSQL tools:
 4. Consider performance implications for large datasets
 """
         
+        # Add SQL guidelines if schema information is provided
+        if schema_info:
+            sql_guidelines = """
+## SQL Query Guidelines
+
+1. Always use the correct column names as defined in the schema above
+2. Check the data types before performing operations
+3. Use appropriate SQL syntax for PostgreSQL
+4. For complex queries, break down your reasoning step by step
+5. When unsure about schema details, refer to the schema information above
+"""
+            # Append SQL guidelines to the tool configuration
+            tool_config += "\n" + sql_guidelines
+        
         return self.generate_system_prompt(
             tools=tools,
             user_prompt=shopify_prompt,
             tool_config=tool_config
-        ) 
+        )
+
+    def generate_postgres_prompt(self, available_tools, schema_info):
+        """Generate a system prompt with PostgreSQL schema information"""
+        
+        # Format schema information
+        schema_text = "## Database Schema\n\n"
+        for server_name, tables in schema_info.items():
+            schema_text += f"### Server: {server_name}\n\n"
+            for table_name, columns in tables.items():
+                schema_text += f"**Table: {table_name}**\n"
+                for column in columns:
+                    schema_text += f"- {column['column_name']} ({column['data_type']})\n"
+                schema_text += "\n"
+        
+        # Create tool definitions
+        tool_definitions = json.dumps(available_tools, indent=2)
+        
+        # Add SQL guidelines
+        sql_guidelines = """
+## SQL Query Guidelines
+
+1. Always use the correct column names as defined in the schema
+2. Check the data types before performing operations
+3. Use appropriate SQL syntax for PostgreSQL
+4. For complex queries, break down your reasoning step by step
+5. When unsure about schema details, check the schema information above
+"""
+        
+        # Create system prompt with schema information
+        system_prompt = self.template.replace(
+            "{{ TOOL_DEFINITIONS }}", tool_definitions
+        ).replace(
+            "{{ USER_SYSTEM_PROMPT }}", 
+            f"{self.default_user_prompt}\n\n{schema_text}"
+        ).replace(
+            "{{ TOOL_CONFIGURATION }}", self.default_tool_config
+        ).replace(
+            "{{ REASONING_GUIDELINES }}", 
+            f"{sql_guidelines}"
+        )
+        
+        return system_prompt 

@@ -70,7 +70,7 @@ async def main(message: cl.Message):
         async with cl.Step("Processing query...") as step:
             # Process the query with our orchestrator
             result = await orchestrator.process_query(message.content, multi_step=multi_step)
-            
+            logger.info(f"Result from orchestrator: {result}")
             # Handle tool calls
             if result.get("tool_calls"):
                 for tool_call in result["tool_calls"]:
@@ -121,8 +121,18 @@ async def main(message: cl.Message):
                                 content=f"✅ Result: {result_content}"
                             ).send()
             
-            # Send the final response
+            # Send the detailed response
             await cl.Message(content=result.get("response", "")).send()
+            
+            logger.info(f"Final Result before summary: {result}")
+            # Generate and send a summary if there were tool calls
+            if result.get("tool_calls"):
+                try:
+                    summary = await orchestrator.generate_summary(result)
+                    if summary:
+                        await cl.Message(content=f"📋 **Summary**: {summary}").send()
+                except Exception as e:
+                    logger.error(f"Error generating summary: {str(e)}", exc_info=True)
             
             # If multi-step, show step count
             if multi_step and "steps_executed" in result:
