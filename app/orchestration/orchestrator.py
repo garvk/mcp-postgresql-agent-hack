@@ -56,10 +56,10 @@ class Orchestrator:
         # Set up system prompt with available tools and schema information
         available_tools = self.tool_orchestrator.get_available_tools()
         
-        # Use the enhanced Shopify prompt with schema information
-        system_prompt = self.prompt_manager.generate_shopify_prompt(
+        # Use the general system prompt
+        system_prompt = self.prompt_manager.generate_system_prompt(
             tools=available_tools,
-            schema_info=schema_info if schema_info else None
+            include_reasoning=True
         )
         
         logger.info(f"System prompt: {system_prompt}")
@@ -328,4 +328,4 @@ class Orchestrator:
         
         except Exception as e:
             logger.error(f"Error generating summary: {str(e)}", exc_info=True)
-            return "Unable to generate summary due to an error." 
+            return "Unable to generate summary due to an error."
